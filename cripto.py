@@ -1,8 +1,8 @@
-# Implementação do Skipjack (Cifra Simétrica - FIPS PUB 185)
-# Foco: Módulo de telemetria WSN/IoT em Python 3.12
+# Implementação da cifra Skipjack (FIPS PUB 185)
+
 import struct
 
-# Tabela F (S-box fixa de 8x8 bits - 256 valores) conforme especificação da NSA
+# Tabela F utilizada nas operações internas da cifra
 F_TABLE = [
     0xa3, 0xd7, 0x09, 0x83, 0xf8, 0x48, 0xf6, 0xf4, 0xb3, 0x21, 0x15, 0x78, 0x99, 0xb1, 0xaf, 0xf9,
     0xe7, 0x2d, 0x4d, 0x8a, 0xce, 0x4c, 0xca, 0x2e, 0x52, 0x95, 0xd9, 0x1e, 0x4e, 0x38, 0x44, 0x28,
@@ -22,11 +22,11 @@ F_TABLE = [
     0x5e, 0x6c, 0xa9, 0x13, 0x57, 0x25, 0xb5, 0xe3, 0xbd, 0xa8, 0x3a, 0x01, 0x05, 0x59, 0x2a, 0x46
 ]
 
+
 def permute_G(w, k_bytes):
-    """
-    Permutação G interna (4 passos de Feistel em 16 bits).
-    Recebe um w (16 bits) e 4 bytes da subchave da rodada.
-    """
+    #Realiza a permutação G, que trabalha com uma palavra de 16 bits
+    #e utiliza quatro bytes da chave para transformar seu valor.
+ 
     g1, g2 = w >> 8, w & 0xFF
     g3 = F_TABLE[g2 ^ k_bytes[0]] ^ g1
     g4 = F_TABLE[g3 ^ k_bytes[1]] ^ g2
@@ -34,62 +34,68 @@ def permute_G(w, k_bytes):
     g6 = F_TABLE[g5 ^ k_bytes[3]] ^ g4
     return (g5 << 8) | g6
 
+
 def get_round_keys(key, round_idx):
-    """
-    Retorna os 4 bytes da subchave para a rodada especificada,
-    implementando a periodicidade de 5 rodadas da chave de 80 bits.
-    """
+
+    #Separa os quatro bytes da chave que serão utilizados
+    #na rodada atual. A chave é reutilizada a cada cinco rodadas.
+    
     return [key[(4 * (round_idx - 1) + j) % 10] for j in range(4)]
 
+
 def skipjack_encrypt(plaintext: bytes, key: bytes) -> bytes:
-    """Função de cifragem: 32 rodadas (A8 -> B8 -> A8 -> B8)."""
-    # 1. Empacotamento determinístico: Quebra o bloco de 64 bits em 4 palavras de 16 bits
+   #Realiza a cifragem da mensagem utilizando as 32 rodadas do Skipjack."""
+
+    # Divide a mensagem em quatro partes de 16 bits
     w1, w2, w3, w4 = struct.unpack('>4H', plaintext)
-    
+
     for i in range(1, 33):
         k_bytes = get_round_keys(key, i)
-        
+
         if (1 <= i <= 8) or (17 <= i <= 24):
-            # Regra A
+            # Aplica a Regra A nas rodadas correspondentes
             gw = permute_G(w1, k_bytes)
             new_w1 = gw ^ w4 ^ i
             new_w2 = gw
             new_w3 = w2
             new_w4 = w3
         else:
-            # Regra B
+            # Nas demais rodadas, utiliza a Regra B
             gw = permute_G(w1, k_bytes)
             new_w1 = w4
             new_w2 = gw
             new_w3 = w1 ^ w2 ^ i
             new_w4 = w3
-            
+
+        # Atualiza os quatro registradores para a próxima rodada
         w1, w2, w3, w4 = new_w1, new_w2, new_w3, new_w4
 
-    # 2. Empacotamento de saída: Remonta os registradores em bytes estruturados
+    # Junta as quatro partes novamente para formar o bloco cifrado
     return struct.pack('>4H', w1, w2, w3, w4)
 
-def skipjack_decrypt(ciphertext: bytes, key: bytes) -> bytes:
-    """
-    Função de decifragem: inverte o processo executando as rodadas
-    na ordem inversa (32 até 1) aplicando o inverso das Regras A e B.
-    (Lógica inversa suprimida no rascunho para focar nas chamadas estruturais).
-    """
-    pass # Implementação simétrica reversa conforme especificações NIST
 
-# --- Teste Mínimo de Validação (Vetor Oficial do NIST) ---
+def skipjack_decrypt(ciphertext: bytes, key: bytes) -> bytes:
+    #Faz a operação inversa da cifragem, percorrendo as rodadas
+    #na ordem contrária e recuperando a mensagem original.
+    #(Implementação da lógica de decifragem ainda pendente.)
+   
+    pass
+
+
+# Teste da implementação utilizando um vetor de teste oficial
 if __name__ == "__main__":
-    # Vetor oficial NIST
+
+    # Define a chave e a mensagem que serão utilizadas no teste
     key_bytes = bytes.fromhex("00998877665544332211")
     plaintext_bytes = bytes.fromhex("33221100ddccbbaa")
-    
+
     print(f"Mensagem Original (Hex): {plaintext_bytes.hex()}")
     print(f"Chave (80 bits)        : {key_bytes.hex()}")
-    
-    # Chamada de Cifragem
+
+    # Cifra a mensagem utilizando a chave definida
     ciphertext_bytes = skipjack_encrypt(plaintext_bytes, key_bytes)
     print(f"Resultado Cifrado (Hex): {ciphertext_bytes.hex()}")
-    
-    # Chamada de Decifragem (Simulação visual da reversibilidade)
+
+    # A decifragem poderá ser testada após sua implementação
     # recovered_bytes = skipjack_decrypt(ciphertext_bytes, key_bytes)
     # print(f"Mensagem Recuperada    : {recovered_bytes.hex()}")
