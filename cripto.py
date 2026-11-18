@@ -74,28 +74,54 @@ def skipjack_encrypt(plaintext: bytes, key: bytes) -> bytes:
     return struct.pack('>4H', w1, w2, w3, w4)
 
 
+def inverse_permute_G(w, k_bytes):
+    """
+    Permutação G inversa (desfaz os 4 passos da Feistel interna na ordem reversa).
+    """
+    g5, g6 = w >> 8, w & 0xFF
+    g4 = F_TABLE[g5 ^ k_bytes[3]] ^ g6
+    g3 = F_TABLE[g4 ^ k_bytes[2]] ^ g5
+    g2 = F_TABLE[g3 ^ k_bytes[1]] ^ g4
+    g1 = F_TABLE[g2 ^ k_bytes[0]] ^ g3
+    return (g1 << 8) | g2
+
 def skipjack_decrypt(ciphertext: bytes, key: bytes) -> bytes:
-    #Faz a operação inversa da cifragem, percorrendo as rodadas
-    #na ordem contrária e recuperando a mensagem original.
-    #(Implementação da lógica de decifragem ainda pendente.)
-   
-    pass
+    """
+    Função de decifragem: inverte o processo executando as rodadas na ordem inversa (32 até 1) aplicando o inverso das Regras A e B.
+    """
+    w1, w2, w3, w4 = struct.unpack('>4H', ciphertext)
+    
+    for i in range(32, 0, -1):
+        k_bytes = get_round_keys(key, i)
+        
+        if (1 <= i <= 8) or (17 <= i <= 24):
+            # Inverso da Regra A
+            prev_w1 = inverse_permute_G(w2, k_bytes)
+            prev_w2 = w3
+            prev_w3 = w4
+            prev_w4 = w1 ^ w2 ^ i
+        else:
+            # Inverso da Regra B
+            prev_w1 = inverse_permute_G(w2, k_bytes)
+            prev_w2 = prev_w1 ^ w3 ^ i
+            prev_w3 = w4
+            prev_w4 = w1
+            
+        w1, w2, w3, w4 = prev_w1, prev_w2, prev_w3, prev_w4
 
+    return struct.pack('>4H', w1, w2, w3, w4)
 
-# Teste da implementação utilizando um vetor de teste oficial
 if __name__ == "__main__":
-
-    # Define a chave e a mensagem que serão utilizadas no teste
     key_bytes = bytes.fromhex("00998877665544332211")
     plaintext_bytes = bytes.fromhex("33221100ddccbbaa")
-
+    
     print(f"Mensagem Original (Hex): {plaintext_bytes.hex()}")
     print(f"Chave (80 bits)        : {key_bytes.hex()}")
-
-    # Cifra a mensagem utilizando a chave definida
+    
+    # Chamada de Cifragem
     ciphertext_bytes = skipjack_encrypt(plaintext_bytes, key_bytes)
     print(f"Resultado Cifrado (Hex): {ciphertext_bytes.hex()}")
-
-    # A decifragem poderá ser testada após sua implementação
-    # recovered_bytes = skipjack_decrypt(ciphertext_bytes, key_bytes)
-    # print(f"Mensagem Recuperada    : {recovered_bytes.hex()}")
+    
+    # Chamada de Decifragem com a implementação reversa concluída
+    recovered_bytes = skipjack_decrypt(ciphertext_bytes, key_bytes)
+    print(f"Mensagem Recuperada    : {recovered_bytes.hex()}")
