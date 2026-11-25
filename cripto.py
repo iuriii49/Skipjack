@@ -42,15 +42,29 @@ def inverse_permute_G(w: int, k_bytes: list[int]) -> int:
 
 
 def get_round_keys(key: bytes, round_idx: int) -> list[int]:
+    if len(key) != 10:
+        raise ValueError("A chave Skipjack deve possuir exatamente 10 bytes (80 bits).")
+
+    if not 1 <= round_idx <= 32:
+        raise ValueError("O índice da rodada deve estar entre 1 e 32.")
+
     return [key[(4 * (round_idx - 1) + j) % 10] for j in range(4)]
 
 
 def skipjack_encrypt_block(plaintext: bytes, key: bytes) -> bytes:
     """Cifra um único bloco de 64 bits (8 bytes) com chave de 80 bits (10 bytes)."""
+
+    if len(plaintext) != 8:
+        raise ValueError("O bloco de texto claro deve possuir exatamente 8 bytes.")
+
+    if len(key) != 10:
+        raise ValueError("A chave Skipjack deve possuir exatamente 10 bytes.")
+
     w1, w2, w3, w4 = struct.unpack('>4H', plaintext)
 
     for i in range(1, 33):
         k_bytes = get_round_keys(key, i)
+
         if (1 <= i <= 8) or (17 <= i <= 24):
             gw = permute_G(w1, k_bytes)
             new_w1 = gw ^ w4 ^ i
@@ -63,6 +77,7 @@ def skipjack_encrypt_block(plaintext: bytes, key: bytes) -> bytes:
             new_w2 = gw
             new_w3 = w1 ^ w2 ^ i
             new_w4 = w3
+
         w1, w2, w3, w4 = new_w1, new_w2, new_w3, new_w4
 
     return struct.pack('>4H', w1, w2, w3, w4)
@@ -70,10 +85,18 @@ def skipjack_encrypt_block(plaintext: bytes, key: bytes) -> bytes:
 
 def skipjack_decrypt_block(ciphertext: bytes, key: bytes) -> bytes:
     """Decifra um único bloco de 64 bits (8 bytes) com chave de 80 bits (10 bytes)."""
+
+    if len(ciphertext) != 8:
+        raise ValueError("O bloco cifrado deve possuir exatamente 8 bytes.")
+
+    if len(key) != 10:
+        raise ValueError("A chave Skipjack deve possuir exatamente 10 bytes.")
+
     w1, w2, w3, w4 = struct.unpack('>4H', ciphertext)
 
     for i in range(32, 0, -1):
         k_bytes = get_round_keys(key, i)
+
         if (1 <= i <= 8) or (17 <= i <= 24):
             prev_w1 = inverse_permute_G(w2, k_bytes)
             prev_w2 = w3
@@ -84,6 +107,7 @@ def skipjack_decrypt_block(ciphertext: bytes, key: bytes) -> bytes:
             prev_w2 = prev_w1 ^ w3 ^ i
             prev_w3 = w4
             prev_w4 = w1
+
         w1, w2, w3, w4 = prev_w1, prev_w2, prev_w3, prev_w4
 
     return struct.pack('>4H', w1, w2, w3, w4)
@@ -92,60 +116,107 @@ def skipjack_decrypt_block(ciphertext: bytes, key: bytes) -> bytes:
 # --- Padding PKCS#7 para blocos de 8 bytes (64 bits) ---
 
 def pad_pkcs7(data: bytes, block_size: int = 8) -> bytes:
+    if not 1 <= block_size <= 255:
+        raise ValueError("Tamanho de bloco inválido.")
+
     pad_len = block_size - (len(data) % block_size)
     return data + bytes([pad_len] * pad_len)
 
 
 def unpad_pkcs7(data: bytes) -> bytes:
+    if not data or len(data) % 8 != 0:
+        raise ValueError("Dados inválidos para remoção do padding.")
+
     pad_len = data[-1]
+
     if pad_len < 1 or pad_len > 8:
         raise ValueError("Padding inválido ou chave incorreta.")
+
+    if data[-pad_len:] != bytes([pad_len] * pad_len):
+        raise ValueError("Padding PKCS#7 inválido.")
+
     return data[:-pad_len]
 
 
 def xor_bytes(a: bytes, b: bytes) -> bytes:
+    if len(a) != len(b):
+        raise ValueError("Os dados devem possuir o mesmo tamanho para XOR.")
+
     return bytes(x ^ y for x, y in zip(a, b))
 
 
 # --- Modos de Operação: ECB e CBC ---
 
 def encrypt_ecb(data: bytes, key: bytes) -> bytes:
+    if len(key) != 10:
+        raise ValueError("A chave Skipjack deve possuir exatamente 10 bytes.")
+
     padded = pad_pkcs7(data)
     out = bytearray()
+
     for i in range(0, len(padded), 8):
         out.extend(skipjack_encrypt_block(padded[i:i+8], key))
+
     return bytes(out)
 
 
 def decrypt_ecb(ciphertext: bytes, key: bytes) -> bytes:
+    if len(key) != 10:
+        raise ValueError("A chave Skipjack deve possuir exatamente 10 bytes.")
+
+    if not ciphertext or len(ciphertext) % 8 != 0:
+        raise ValueError("O texto cifrado deve possuir blocos completos de 8 bytes.")
+
     out = bytearray()
+
     for i in range(0, len(ciphertext), 8):
         out.extend(skipjack_decrypt_block(ciphertext[i:i+8], key))
+
     return unpad_pkcs7(bytes(out))
 
 
 def encrypt_cbc(data: bytes, key: bytes, iv: bytes | None = None) -> tuple[bytes, bytes]:
+    if len(key) != 10:
+        raise ValueError("A chave Skipjack deve possuir exatamente 10 bytes.")
+
     if iv is None:
         iv = secrets.token_bytes(8)
+
+    if len(iv) != 8:
+        raise ValueError("O IV deve possuir exatamente 8 bytes (64 bits).")
+
     padded = pad_pkcs7(data)
     out = bytearray()
     prev_block = iv
+
     for i in range(0, len(padded), 8):
         block = xor_bytes(padded[i:i+8], prev_block)
         enc_block = skipjack_encrypt_block(block, key)
         out.extend(enc_block)
         prev_block = enc_block
+
     return iv, bytes(out)
 
 
 def decrypt_cbc(ciphertext: bytes, key: bytes, iv: bytes) -> bytes:
+    if len(key) != 10:
+        raise ValueError("A chave Skipjack deve possuir exatamente 10 bytes.")
+
+    if len(iv) != 8:
+        raise ValueError("O IV deve possuir exatamente 8 bytes (64 bits).")
+
+    if not ciphertext or len(ciphertext) % 8 != 0:
+        raise ValueError("O texto cifrado deve possuir blocos completos de 8 bytes.")
+
     out = bytearray()
     prev_block = iv
+
     for i in range(0, len(ciphertext), 8):
         enc_block = ciphertext[i:i+8]
         dec_block = skipjack_decrypt_block(enc_block, key)
         out.extend(xor_bytes(dec_block, prev_block))
         prev_block = enc_block
+
     return unpad_pkcs7(bytes(out))
 
 

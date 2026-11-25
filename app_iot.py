@@ -93,9 +93,6 @@ def executar_teste_nist():
 
 def main():
     while True:
-        print("\n" + "=" * 55)
-        print("  PROJETO SKIPJACK — PROTEÇÃO TELEMÉTRICA IoT / WSN")
-        print("=" * 55)
         print("1. Simular transmissão segura (Nó Sensor -> Estação Base)")
         print("2. Validar cifra com vetor oficial do NIST")
         print("0. Sair")
